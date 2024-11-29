@@ -188,6 +188,8 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         flb_http_add_header(client, "X-P-Stream", 10, x_p_stream_value, flb_sds_len(x_p_stream_value));
         flb_http_basic_auth(client, ctx->p_username, ctx->p_password);
 
+        /* Log the body being sent */
+        flb_plg_info(ctx->ins, "HTTP request body: %s", body);
         /* Perform request */
         ret = flb_http_do(client, &b_sent);
         flb_plg_info(ctx->ins, "HTTP request http_do=%i, HTTP Status: %i",
