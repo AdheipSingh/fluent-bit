@@ -108,6 +108,23 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         }
     }
 
+    /* Get upstream connection */
+    u_conn = flb_upstream_conn_get(ctx->upstream);
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "Connection initialization error");
+        flb_sds_destroy(body);
+        flb_sds_destroy(x_p_stream_value);
+        msgpack_sbuffer_destroy(&sbuf);
+        if (ra) {
+            flb_ra_destroy(ra);
+        }
+        if (ns_ra) {
+            flb_ra_destroy(ns_ra);
+        }
+        flb_log_event_decoder_destroy(&log_decoder);
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
     /* Process each event */
     flb_plg_info(ctx->ins, "Processing events...");
     while (flb_log_event_decoder_next(&log_decoder, &log_event) == FLB_EVENT_DECODER_SUCCESS) {
@@ -203,23 +220,6 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         else {
             flb_plg_error(ctx->ins, "Stream is not set");
             flb_sds_destroy(body);
-            msgpack_sbuffer_destroy(&sbuf);
-            if (ra) {
-                flb_ra_destroy(ra);
-            }
-            if (ns_ra) {
-                flb_ra_destroy(ns_ra);
-            }
-            flb_log_event_decoder_destroy(&log_decoder);
-            FLB_OUTPUT_RETURN(FLB_ERROR);
-        }
-
-        /* Get upstream connection */
-        u_conn = flb_upstream_conn_get(ctx->upstream);
-        if (!u_conn) {
-            flb_plg_error(ctx->ins, "Connection initialization error");
-            flb_sds_destroy(body);
-            flb_sds_destroy(x_p_stream_value);
             msgpack_sbuffer_destroy(&sbuf);
             if (ra) {
                 flb_ra_destroy(ra);
