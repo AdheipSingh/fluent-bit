@@ -266,7 +266,6 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         flb_sds_destroy(body);
         flb_sds_destroy(x_p_stream_value);
         flb_http_client_destroy(client);
-        flb_upstream_conn_release(u_conn);
         msgpack_sbuffer_destroy(&sbuf);
     }
 
@@ -277,6 +276,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     if (ns_ra) {
         flb_ra_destroy(ns_ra);
     }
+    flb_upstream_conn_release(u_conn);
     flb_log_event_decoder_destroy(&log_decoder);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
