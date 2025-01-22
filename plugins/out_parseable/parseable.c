@@ -12,6 +12,23 @@
 
 #include "parseable.h"
 
+// Function prototypes - add these before cb_parseable_init
+static int should_skip_namespace(struct flb_out_parseable *ctx, const char *namespace);
+static int pack_event_data(msgpack_packer *pk, struct flb_log_event *log_event);
+static flb_sds_t get_stream_value(struct flb_out_parseable *ctx, 
+                                 struct flb_record_accessor *ra,
+                                 msgpack_object *body);
+static int send_http_request(struct flb_out_parseable *ctx,
+                           struct flb_connection *u_conn,
+                           flb_sds_t body,
+                           flb_sds_t stream_value,
+                           size_t *b_sent);
+static void cleanup_resources(msgpack_sbuffer *sbuf,
+                            struct flb_record_accessor *ra,
+                            struct flb_record_accessor *ns_ra,
+                            struct flb_connection *u_conn,
+                            struct flb_log_event_decoder *decoder);
+
 static int cb_parseable_init(struct flb_output_instance *ins,
                              struct flb_config *config, void *data)
 {
@@ -192,7 +209,6 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 }
 
 /* Helper functions */
-
 static inline int should_skip_namespace(struct flb_out_parseable *ctx, const char *namespace) {
     struct cfl_list *head;
     struct flb_slist_entry *entry;
