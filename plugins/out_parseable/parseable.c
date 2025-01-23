@@ -101,16 +101,17 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
-    /* Get upstream context */
-    u = ctx->upstream;
-    if (!u) {
-        flb_plg_error(ctx->ins, "[CONN] Upstream context is NULL");
-        flb_log_event_decoder_destroy(&log_decoder);
-        FLB_OUTPUT_RETURN(FLB_ERROR);
-    }
+
+    // /* Get upstream context */
+    // u = ctx->upstream;
+    // if (!u) {
+    //     flb_plg_error(ctx->ins, "[CONN] Upstream context is NULL");
+    //     flb_log_event_decoder_destroy(&log_decoder);
+    //     FLB_OUTPUT_RETURN(FLB_ERROR);
+    // }
 
     /* Debug upstream configuration */
-    flb_plg_debug(ctx->ins, "[CONN] Attempting connection to %s:%i", u->tcp_host, u->tcp_port);
+    //flb_plg_debug(ctx->ins, "[CONN] Attempting connection to %s:%i", u->tcp_host, u->tcp_port);
 
 
     // /* Get upstream connection */
