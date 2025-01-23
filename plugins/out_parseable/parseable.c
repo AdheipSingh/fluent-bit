@@ -19,10 +19,9 @@ static flb_sds_t get_stream_value(struct flb_out_parseable *ctx,
                                  struct flb_record_accessor *ra,
                                  msgpack_object *body);
 static int send_http_request(struct flb_out_parseable *ctx,
-                           struct flb_connection *u_conn,
-                           flb_sds_t body,
-                           flb_sds_t stream_value,
-                           size_t *b_sent);
+                             const void *body, size_t body_len,
+                             const char *tag, int tag_len,
+                             char **headers);
 static void cleanup_resources(msgpack_sbuffer *sbuf,
                             struct flb_record_accessor *ra,
                             struct flb_record_accessor *ns_ra,
@@ -114,14 +113,14 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     flb_plg_debug(ctx->ins, "[CONN] Attempting connection to %s:%i", u->tcp_host, u->tcp_port);
 
 
-    /* Get upstream connection */
-    u_conn = flb_upstream_conn_get(u);
-    if (!u_conn) {
-        flb_plg_error(ctx->ins, "[CONN] Failed to get upstream connection to %s:%i", 
-                     u->tcp_host, u->tcp_port);
-        flb_log_event_decoder_destroy(&log_decoder);
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
+    // /* Get upstream connection */
+    // u_conn = flb_upstream_conn_get(u);
+    // if (!u_conn) {
+    //     flb_plg_error(ctx->ins, "[CONN] Failed to get upstream connection to %s:%i", 
+    //                  u->tcp_host, u->tcp_port);
+    //     flb_log_event_decoder_destroy(&log_decoder);
+    //     FLB_OUTPUT_RETURN(FLB_RETRY);
+    // }
 
     /* Create record accessors only if needed */
     if (ctx->stream && strcmp(ctx->stream, "$NAMESPACE") == 0) {
@@ -190,7 +189,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         }
 
         /* Create and send HTTP request */
-        ret = send_http_request(ctx, u_conn, body, x_p_stream_value, &b_sent);
+        ret = send_http_request(ctx, body, flb_sds_len(body), NULL, 0, NULL);
         
         /* Cleanup iteration resources */
         flb_sds_destroy(body);
@@ -255,46 +254,151 @@ static flb_sds_t get_stream_value(struct flb_out_parseable *ctx,
 }
 
 static int send_http_request(struct flb_out_parseable *ctx,
-                           struct flb_connection *u_conn,
-                           flb_sds_t body,
-                           flb_sds_t stream_value,
-                           size_t *b_sent) {
-    struct flb_http_client *client;
+                             const void *body, size_t body_len,
+                             const char *tag, int tag_len,
+                             char **headers)
+{
     int ret;
+    int out_ret = FLB_OK;
+    size_t b_sent;
+    struct flb_upstream *u;
+    struct flb_connection *u_conn;
+    struct flb_http_client *c;
+    flb_sds_t stream_value = NULL;
 
-    flb_plg_debug(ctx->ins, "[HTTP] Creating client for request, body size: %zu", flb_sds_len(body));
-    
-    client = flb_http_client(u_conn,
-                           FLB_HTTP_POST, "/api/v1/ingest",
-                           body, flb_sds_len(body),
-                           ctx->server_host, ctx->server_port,
-                           NULL, 0);
-    if (!client) {
-        flb_plg_error(ctx->ins, "[HTTP] Failed to create HTTP client");
+    /* Get upstream context and connection */
+    u = ctx->upstream;
+    u_conn = flb_upstream_conn_get(u);
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
+                      u->tcp_host, u->tcp_port);
+        return FLB_RETRY;
+    }
+
+    /* If stream is $NAMESPACE, get namespace dynamically */
+    if (ctx->stream && strcmp(ctx->stream, "$NAMESPACE") == 0) {
+        struct flb_record_accessor *ra = flb_ra_create("$kubernetes['namespace_name']", FLB_TRUE);
+        if (ra) {
+            // Translate the stream value from the current log record
+            // Note: You'll need to pass the current log record here
+            // stream_value = flb_ra_translate(ra, NULL, -1, current_log_record, NULL);
+            flb_ra_destroy(ra);
+        }
+    }
+    else if (ctx->stream) {
+        stream_value = flb_sds_create(ctx->stream);
+    }
+
+    /* Create HTTP client context */
+    c = flb_http_client(u_conn, FLB_HTTP_POST, "/api/v1/ingest",
+                        body, body_len,
+                        ctx->server_host, ctx->server_port,
+                        NULL, 0);
+
+    if (!c) {
+        flb_plg_error(ctx->ins, "Failed to create HTTP client");
+        flb_upstream_conn_release(u_conn);
+        if (stream_value) flb_sds_destroy(stream_value);
         return FLB_ERROR;
     }
+
 
     /* Set headers */
-    flb_http_add_header(client, "Content-Type", 12, "application/json", 16);
-    flb_http_add_header(client, "X-P-Stream", 10, stream_value, flb_sds_len(stream_value));
-    flb_http_basic_auth(client, ctx->username, ctx->password);
-
-    /* Perform request */
-    ret = flb_http_do(client, b_sent);
-    flb_plg_debug(ctx->ins, "[HTTP] Request sent - Status: %i, Bytes sent: %zu", 
-                 client->resp.status, *b_sent);
-
-    /* Check response */
-    if (ret != 0 || client->resp.status != 200) {
-        flb_plg_error(ctx->ins, "[HTTP] Request failed - Status: %i, Error: %s",
-                     client->resp.status, client->resp.payload);
-        flb_http_client_destroy(client);
-        return FLB_ERROR;
+    flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
+//     flb_http_add_header(client, "X-P-Stream", 10, stream_value, flb_sds_len(stream_value));
+//     flb_http_basic_auth(client, ctx->username, ctx->password);
+    /* Add stream header */
+    if (stream_value) {
+        flb_http_add_header(c, 
+                            "X-P-Stream", 10, 
+                            stream_value, flb_sds_len(stream_value));
+        flb_sds_destroy(stream_value);
     }
 
-    flb_http_client_destroy(client);
-    return FLB_OK;
+    /* Basic Auth */
+    if (ctx->username && ctx->password) {
+        flb_http_basic_auth(c, ctx->username, ctx->password);
+    }
+
+    /* Perform HTTP request */
+    ret = flb_http_do(c, &b_sent);
+    if (ret == 0) {
+        /* Check HTTP status codes */
+        if (c->resp.status < 200 || c->resp.status > 205) {
+            flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
+                          ctx->server_host, ctx->server_port,
+                          c->resp.status);
+            
+            if (c->resp.status >= 400 && c->resp.status < 500 &&
+                c->resp.status != 429 && c->resp.status != 408) {
+                flb_plg_warn(ctx->ins, "could not flush records to %s:%i, chunk will not be retried",
+                             ctx->server_host, ctx->server_port);
+                out_ret = FLB_ERROR;
+            }
+            else {
+                out_ret = FLB_RETRY;
+            }
+        }
+        else {
+            flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i",
+                         ctx->server_host, ctx->server_port,
+                         c->resp.status);
+        }
+    }
+    else {
+        flb_plg_error(ctx->ins, "could not flush records to %s:%i (http_do=%i)",
+                      ctx->server_host, ctx->server_port, ret);
+        out_ret = FLB_RETRY;
+    }
+
+    /* Cleanup */
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
+
+    return out_ret;
 }
+
+// static int send_http_request(struct flb_out_parseable *ctx,
+//                            struct flb_connection *u_conn,
+//                            flb_sds_t body,
+//                            flb_sds_t stream_value,
+//                            size_t *b_sent) {
+//     struct flb_http_client *client;
+//     int ret;
+
+//     flb_plg_debug(ctx->ins, "[HTTP] Creating client for request, body size: %zu", flb_sds_len(body));
+    
+//     client = flb_http_client(u_conn,
+//                            FLB_HTTP_POST, "/api/v1/ingest",
+//                            body, flb_sds_len(body),
+//                            ctx->server_host, ctx->server_port,
+//                            NULL, 0);
+//     if (!client) {
+//         flb_plg_error(ctx->ins, "[HTTP] Failed to create HTTP client");
+//         return FLB_ERROR;
+//     }
+
+//     /* Set headers */
+//     flb_http_add_header(client, "Content-Type", 12, "application/json", 16);
+//     flb_http_add_header(client, "X-P-Stream", 10, stream_value, flb_sds_len(stream_value));
+//     flb_http_basic_auth(client, ctx->username, ctx->password);
+
+//     /* Perform request */
+//     ret = flb_http_do(client, b_sent);
+//     flb_plg_debug(ctx->ins, "[HTTP] Request sent - Status: %i, Bytes sent: %zu", 
+//                  client->resp.status, *b_sent);
+
+//     /* Check response */
+//     if (ret != 0 || client->resp.status != 200) {
+//         flb_plg_error(ctx->ins, "[HTTP] Request failed - Status: %i, Error: %s",
+//                      client->resp.status, client->resp.payload);
+//         flb_http_client_destroy(client);
+//         return FLB_ERROR;
+//     }
+
+//     flb_http_client_destroy(client);
+//     return FLB_OK;
+// }
 
 static void cleanup_resources(msgpack_sbuffer *sbuf,
                             struct flb_record_accessor *ra,
