@@ -53,16 +53,16 @@ static int cb_parseable_init(struct flb_output_instance *ins,
 
     flb_plg_info(ctx->ins, "Configured port: %d", ctx->server_port);
 
-    ctx->upstream = flb_upstream_create(config,
-                                        ctx->server_host,
-                                        ctx->server_port,
-                                        FLB_IO_TCP,
-                                        NULL);
+    // ctx->upstream = flb_upstream_create(config,
+    //                                     ctx->server_host,
+    //                                     ctx->server_port,
+    //                                     FLB_IO_TCP,
+    //                                     NULL);
 
-    if (!ctx->upstream) {
-        flb_free(ctx);
-        return -1;
-    }
+    // if (!ctx->upstream) {
+    //     flb_free(ctx);
+    //     return -1;
+    // }
 
     /* Export context */
     flb_output_set_context(ins, ctx);
