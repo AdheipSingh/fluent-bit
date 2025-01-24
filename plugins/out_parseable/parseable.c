@@ -135,6 +135,8 @@ static int cb_parseable_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    ctx->upstream->base.net.connect_timeout = 30;
+
     /* Export context */
     flb_output_set_context(ins, ctx);
 
