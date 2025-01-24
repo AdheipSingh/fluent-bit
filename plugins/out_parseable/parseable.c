@@ -128,15 +128,15 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     ctx->upstream = flb_upstream_create(config,
                                         ctx->server_host,
                                         ctx->server_port,
-                                        FLB_IO_TCP,
+                                        FLB_IO_TCP | FLB_IO_ASYNC,
                                         NULL);
     if (!ctx->upstream) {
         flb_free(ctx);
         return -1;
     }
 
-    ctx->upstream->base.net.connect_timeout = 30;
-
+    ctx->upstream->base.net.connect_timeout = 300;
+    flb_output_set_property(ins, "flush", "10");
     /* Export context */
     flb_output_set_context(ins, ctx);
 
