@@ -131,7 +131,7 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
 
         /* Set headers */
-        flb_http_add_header(client, "X-P-Stream", 10, "t1", flb_sds_len("t1"));
+        flb_http_add_header(client, "X-P-Stream", 10, "t1", 2);
         flb_http_basic_auth(client, ctx->username, ctx->password);
 
 
