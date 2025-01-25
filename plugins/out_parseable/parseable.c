@@ -139,13 +139,26 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     ctx->upstream->base.net.accept_timeout = 600;
     ctx->upstream->base.net.keepalive_idle_timeout = 600;
     
-    /* Add plugin-specific configuration */
-    flb_output_set_property(ins, "flush", "2");             // Flush interval
+   /* Add plugin-specific configuration */
+    flb_output_set_property(ins, "flush", "2");                // Flush interval
     flb_output_set_property(ins, "Buffer_Chunk_Size", "512K"); // Chunk size
     flb_output_set_property(ins, "Buffer_Max_Size", "2M");     // Max buffer size
     flb_output_set_property(ins, "Mem_Buf_Limit", "20MB");     // Memory buffer limit
+
+    /* Retry and backoff settings */
+    flb_output_set_property(ins, "Retry_Limit", "5");          // Maximum retry attempts
+    flb_output_set_property(ins, "Retry_Interval", "10");      // Retry interval in seconds
+
+    /* Network-related tuning */
+    flb_output_set_property(ins, "dns_cache", "on");           // Enable DNS caching
+    flb_output_set_property(ins, "net.keepalive", "on");       // Enable persistent connections
+    flb_output_set_property(ins, "net.connect_timeout", "600"); // Connection timeout in seconds
+    flb_output_set_property(ins, "net.accept_timeout", "600"); // Accept timeout in seconds
+    flb_output_set_property(ins, "net.keepalive_idle_timeout", "600"); // Keepalive idle timeout in seconds
+
     /* Export context */
     flb_output_set_context(ins, ctx);
+
 
     return 0;
 }
