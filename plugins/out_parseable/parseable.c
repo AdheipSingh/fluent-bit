@@ -135,11 +135,11 @@ static int cb_parseable_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    ctx->upstream->base.net.connect_timeout = 300;
-    ctx->upstream->base.net.accept_timeout = 300;
-    ctx->upstream->base.net.keepalive_idle_timeout = 300;
+    ctx->upstream->base.net.connect_timeout = 600;
+    ctx->upstream->base.net.accept_timeout = 600;
+    ctx->upstream->base.net.keepalive_idle_timeout = 600;
 
-    flb_output_set_property(ins, "flush", "5");
+    flb_output_set_property(ins, "flush", "2");
     /* Export context */
     flb_output_set_context(ins, ctx);
 
