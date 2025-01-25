@@ -138,8 +138,12 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     ctx->upstream->base.net.connect_timeout = 600;
     ctx->upstream->base.net.accept_timeout = 600;
     ctx->upstream->base.net.keepalive_idle_timeout = 600;
-
-    flb_output_set_property(ins, "flush", "2");
+    
+    /* Add plugin-specific configuration */
+    flb_output_set_property(ins, "flush", "2");             // Flush interval
+    flb_output_set_property(ins, "Buffer_Chunk_Size", "512K"); // Chunk size
+    flb_output_set_property(ins, "Buffer_Max_Size", "2M");     // Max buffer size
+    flb_output_set_property(ins, "Mem_Buf_Limit", "20MB");     // Memory buffer limit
     /* Export context */
     flb_output_set_context(ins, ctx);
 
