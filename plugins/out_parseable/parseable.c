@@ -124,12 +124,15 @@ static int cb_parseable_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    ins->use_tls == FLB_TRUE;
+ 
+
     /* Create upstream context */
     ctx->upstream = flb_upstream_create(config,
                                         ctx->server_host,
                                         ctx->server_port,
-                                        FLB_IO_TLS | FLB_IO_TCP | FLB_IO_ASYNC,
-                                        NULL);
+                                        FLB_IO_TLS | FLB_IO_ASYNC,
+                                        ins->tls);
     if (!ctx->upstream) {
         flb_free(ctx);
         return -1;
