@@ -128,7 +128,7 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     ctx->upstream = flb_upstream_create(config,
                                         ctx->server_host,
                                         ctx->server_port,
-                                        FLB_IO_TCP | FLB_IO_ASYNC,
+                                        FLB_IO_TLS | FLB_IO_TCP | FLB_IO_ASYNC,
                                         NULL);
     if (!ctx->upstream) {
         flb_free(ctx);
