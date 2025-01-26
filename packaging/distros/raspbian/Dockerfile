@@ -18,7 +18,7 @@ RUN apt-get update && \
     make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
+    libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # raspbian/bullseye base image
@@ -31,7 +31,7 @@ RUN apt-get update && \
     cmake make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl1.1 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
+    libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # raspbian/bookworm base image
@@ -44,7 +44,7 @@ RUN apt-get update && \
     cmake make bash sudo wget unzip dh-make \
     libsystemd-dev zlib1g-dev flex bison \
     libssl3 libssl-dev libpq-dev postgresql-server-dev-all \
-    libsasl2-2 libsasl2-dev libyaml-dev pkg-config && \
+    libsasl2-2 libsasl2-dev libyaml-dev libcurl4-openssl-dev pkg-config && \
     apt-get install -y --reinstall lsb-base lsb-release
 
 # Common build for all distributions now
@@ -71,6 +71,7 @@ ARG FLB_OUT_KAFKA=On
 ARG FLB_OUT_PGSQL=On
 ARG FLB_JEMALLOC=On
 ARG FLB_CHUNK_TRACE=On
+ARG WAMR_BUILD_TARGET=ARMV7A # Tell raspbian packages should be using armv7.
 
 ENV CFLAGS=$CFLAGS
 RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
@@ -84,6 +85,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_NIGHTLY_BUILD="$FLB_NIGHTLY_BUILD" \
     -DFLB_JEMALLOC="${FLB_JEMALLOC}" \
     -DFLB_CHUNK_TRACE="${FLB_CHUNK_TRACE}" \
+    -DWAMR_BUILD_TARGET="${WAMR_BUILD_TARGET}" \
     ../
 
 VOLUME [ "/output" ]
