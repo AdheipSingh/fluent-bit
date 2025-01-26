@@ -40,7 +40,7 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     ctx->upstream = flb_upstream_create(config,
                                         ctx->server_host,
                                         ctx->server_port,
-                                        FLB_IO_TCP,
+                                        FLB_IO_TCP | FLB_IO_ASYNC,
                                         NULL);
 
     ctx->upstream->base.net.connect_timeout = ctx->connect_timeout;
@@ -49,7 +49,10 @@ static int cb_parseable_init(struct flb_output_instance *ins,
     flb_plg_info(ctx->ins, "Timeouts - Connect: %ds, Accept: %ds", ctx->connect_timeout, ctx->accept_timeout);
 
     /* Set retry limit */
-    flb_output_set_property(ins, "Retry_Limit", flb_sds_create_int(ctx->retry_limit));
+    char retry_limit_str[16];
+    snprintf(retry_limit_str, sizeof(retry_limit_str), "%d", ctx->retry_limit);
+    flb_output_set_property(ins, "Retry_Limit", retry_limit_str);
+    
     flb_plg_info(ctx->ins, "Retry limit set to: %d", ctx->retry_limit);
 
     if (!ctx->upstream) {
