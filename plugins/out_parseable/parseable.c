@@ -43,18 +43,6 @@ static int cb_parseable_init(struct flb_output_instance *ins,
                                         FLB_IO_TCP | FLB_IO_ASYNC,
                                         NULL);
 
-    ctx->upstream->base.net.connect_timeout = ctx->connect_timeout;
-    ctx->upstream->base.net.accept_timeout = ctx->accept_timeout;
-
-    flb_plg_info(ctx->ins, "Timeouts - Connect: %ds, Accept: %ds", ctx->connect_timeout, ctx->accept_timeout);
-
-    /* Set retry limit */
-    char retry_limit_str[16];
-    snprintf(retry_limit_str, sizeof(retry_limit_str), "%d", ctx->retry_limit);
-    flb_output_set_property(ins, "Retry_Limit", retry_limit_str);
-    
-    flb_plg_info(ctx->ins, "Retry limit set to: %d", ctx->retry_limit);
-
     if (!ctx->upstream) {
         flb_free(ctx);
         return -1;
@@ -78,6 +66,9 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     struct flb_log_event log_event;
     struct flb_record_accessor *ra = NULL;
     struct flb_record_accessor *ns_ra = NULL;  // For checking namespace
+    struct cfl_list *head;
+    struct flb_slist_entry *entry;
+    int skip = 0;
     (void) config;
     struct flb_http_client *client;
     struct flb_connection *u_conn;
@@ -88,6 +79,9 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     size_t b_sent;
     msgpack_sbuffer sbuf;
     msgpack_packer pk;
+    flb_sds_t current_ns = flb_ra_translate(ns_ra, NULL, -1, *log_event.body, NULL);
+    flb_sds_t ns = flb_ra_translate(ra, NULL, -1, *log_event.body, NULL);
+
 
     /* Initialize event decoder */
     flb_plg_info(ctx->ins, "Initializing event decoder...");
@@ -98,9 +92,9 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Create record accessor if stream is set to $NAMESPACE */
-    if (ctx->stream && strcmp(ctx->stream, "$NAMESPACE") == 0) {
+    if (ctx->stream != NULL && strcmp(ctx->stream, "$NAMESPACE") == 0) {
         ra = flb_ra_create("$kubernetes['namespace_name']", FLB_TRUE);
-        if (!ra) {
+        if (ra == NULL) {
             flb_plg_error(ctx->ins, "Failed to create record accessor");
             flb_log_event_decoder_destroy(&log_decoder);
             FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -108,11 +102,11 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Create record accessor for namespace exclusion check */
-    if (ctx->exclude_namespaces) {
+    if (ctx->exclude_namespaces != NULL) {
         ns_ra = flb_ra_create("$kubernetes['namespace_name']", FLB_TRUE);
-        if (!ns_ra) {
+        if (ns_ra == NULL) {
             flb_plg_error(ctx->ins, "Failed to create namespace record accessor");
-            if (ra) {
+            if (ra != NULL) {
                 flb_ra_destroy(ra);
             }
             flb_log_event_decoder_destroy(&log_decoder);
@@ -121,21 +115,15 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Process each event */
-    flb_plg_info(ctx->ins, "Processing events...");
     while (flb_log_event_decoder_next(&log_decoder, &log_event) == FLB_EVENT_DECODER_SUCCESS) {
         /* Check if namespace is in exclusion list */
-        if (ns_ra && ctx->exclude_namespaces) {
-            flb_sds_t current_ns = flb_ra_translate(ns_ra, NULL, -1, *log_event.body, NULL);
-            if (current_ns) {
-                struct cfl_list *head;
-                struct flb_slist_entry *entry;
-                int skip = 0;
-
+       if (ns_ra != NULL && ctx->exclude_namespaces != NULL) {
+            if (current_ns != NULL) {
                 cfl_list_foreach(head, ctx->exclude_namespaces) {
                     entry = cfl_list_entry(head, struct flb_slist_entry, _head);
                     if (strcmp(current_ns, entry->str) == 0) {
                         flb_plg_debug(ctx->ins, "Skipping excluded namespace: %s", current_ns);
-                        skip = 1;
+                        skip = FLB_TRUE;
                         break;
                     }
                 }
@@ -166,13 +154,13 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
         /* Convert to JSON */
         body = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size);
-        if (!body) {
+        msgpack_sbuffer_destroy(&sbuf);  // Clean up the msgpack buffer immediately after conversion
+        if (body == NULL) {
             flb_plg_error(ctx->ins, "Failed to convert msgpack to JSON");
-            msgpack_sbuffer_destroy(&sbuf);
-            if (ra) {
+            if (ra != NULL) {
                 flb_ra_destroy(ra);
             }
-            if (ns_ra) {
+            if (ns_ra != NULL) {
                 flb_ra_destroy(ns_ra);
             }
             flb_log_event_decoder_destroy(&log_decoder);
@@ -180,15 +168,14 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         }
 
         /* Determine X-P-Stream value */
-        if (ra) {
+        if (ra != NULL) {
             /* Use record accessor to get namespace_name */
-            flb_sds_t ns = flb_ra_translate(ra, NULL, -1, *log_event.body, NULL);
-            if (!ns) {
+            if (ns == NULL) {
                 flb_plg_error(ctx->ins, "Failed to extract namespace_name using record accessor");
                 flb_sds_destroy(body);
                 msgpack_sbuffer_destroy(&sbuf);
                 flb_ra_destroy(ra);
-                if (ns_ra) {
+                if (ns_ra != NULL) {
                     flb_ra_destroy(ns_ra);
                 }
                 flb_log_event_decoder_destroy(&log_decoder);
@@ -196,16 +183,16 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             }
             x_p_stream_value = ns;
         }
-        else if (ctx->stream) {
+        else if (ctx->stream != NULL) {
             x_p_stream_value = flb_sds_create(ctx->stream);
-            if (!x_p_stream_value) {
+            if (x_p_stream_value == NULL) {
                 flb_plg_error(ctx->ins, "Failed to set X-P-Stream header");
                 flb_sds_destroy(body);
                 msgpack_sbuffer_destroy(&sbuf);
-                if (ra) {
+                if (ra != NULL) {
                     flb_ra_destroy(ra);
                 }
-                if (ns_ra) {
+                if (ns_ra != NULL) {
                     flb_ra_destroy(ns_ra);
                 }
                 flb_log_event_decoder_destroy(&log_decoder);
@@ -216,10 +203,10 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
             flb_plg_error(ctx->ins, "Stream is not set");
             flb_sds_destroy(body);
             msgpack_sbuffer_destroy(&sbuf);
-            if (ra) {
+            if (ra != NULL) {
                 flb_ra_destroy(ra);
             }
-            if (ns_ra) {
+            if (ns_ra != NULL) {
                 flb_ra_destroy(ns_ra);
             }
             flb_log_event_decoder_destroy(&log_decoder);
@@ -228,15 +215,15 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
 
         /* Get upstream connection */
         u_conn = flb_upstream_conn_get(ctx->upstream);
-        if (!u_conn) {
+        if (u_conn == NULL) {
             flb_plg_error(ctx->ins, "Connection initialization error");
             flb_sds_destroy(body);
             flb_sds_destroy(x_p_stream_value);
             msgpack_sbuffer_destroy(&sbuf);
-            if (ra) {
+            if (ra != NULL) {
                 flb_ra_destroy(ra);
             }
-            if (ns_ra) {
+            if (ns_ra != NULL) {
                 flb_ra_destroy(ns_ra);
             }
             flb_log_event_decoder_destroy(&log_decoder);
@@ -249,16 +236,16 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
                                body, flb_sds_len(body),
                                ctx->server_host, ctx->server_port,
                                NULL, 0);
-        if (!client) {
+        if (client == NULL) {
             flb_plg_error(ctx->ins, "Could not create HTTP client");
             flb_sds_destroy(body);
             flb_sds_destroy(x_p_stream_value);
             msgpack_sbuffer_destroy(&sbuf);
             flb_upstream_conn_release(u_conn);
-            if (ra) {
+            if (ra != NULL) {
                 flb_ra_destroy(ra);
             }
-            if (ns_ra) {
+            if (ns_ra != NULL) {
                 flb_ra_destroy(ns_ra);
             }
             flb_log_event_decoder_destroy(&log_decoder);
@@ -270,8 +257,18 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
         flb_http_add_header(client, "X-P-Stream", 10, x_p_stream_value, flb_sds_len(x_p_stream_value));
         flb_http_basic_auth(client, ctx->username, ctx->password);
 
+
         /* Perform request */
         ret = flb_http_do(client, &b_sent);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "HTTP request failed");
+            flb_sds_destroy(body);
+            flb_sds_destroy(x_p_stream_value);
+            flb_http_client_destroy(client);
+            flb_upstream_conn_release(u_conn);
+            msgpack_sbuffer_destroy(&sbuf);
+            continue;  // Skip to next event instead of returning error
+        }
         flb_plg_info(ctx->ins, "HTTP request sent. Status=%i", client->resp.status);
 
         /* Clean up resources for this iteration */
@@ -283,15 +280,16 @@ static void cb_parseable_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Final cleanup */
-    if (ra) {
+    if (ra != NULL) {
         flb_ra_destroy(ra);
     }
-    if (ns_ra) {
+    if (ns_ra != NULL) {
         flb_ra_destroy(ns_ra);
     }
     flb_log_event_decoder_destroy(&log_decoder);
     FLB_OUTPUT_RETURN(FLB_OK);
 }
+
 
 static int cb_parseable_exit(void *data, struct flb_config *config)
 {
